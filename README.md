@@ -2,7 +2,7 @@
 Three-way merge using simple file versioning, dockerised for easy deployment
 
 Based on the public python gist: https://gist.github.com/solarkraft/26fe291a3de075ae8d96e1ada928fb7d (MIT Licensed)
-Adapted to node.js 
+Adapted to node.js and added selective paths to watch and file extension control to easy use with Obsidian or other synced text documents (avoiding binary files).
 
 ## How it works
 Watch: Uses chokidar to monitor your specified folder for new conflict files.
