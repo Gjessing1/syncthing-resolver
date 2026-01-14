@@ -63,6 +63,26 @@ BACKUP_BEFORE_MERGE=false
 PUID=1000
 PGID=1000
 ```
+
+Reccomended syncthing ignore pattern if used with Obsidian:
+```
+#  UI & Meta (Prevents Layout Conflicts)
+(?d).obsidian/workspace
+(?d).obsidian/workspace.json
+(?d).obsidian/workspace-mobile.json
+.(?d)obsidian/cache
+(?d).obsidian/community-plugins.json
+
+# System junk
+(?d).DS_Store
+(?d)Thumbs.db
+(?d)~syncthing~*
+(?d).syncthing.*
+(?d)desktop.ini
+
+# Sync history (Keeps history local to each device)
+.stversions
+```
 ## Performance & Footprint
 - **Memory:** Extremely lightweight, typically using ~10MB to 15MB of RAM.
 - **CPU:** Near-zero idle usage; only wakes up when a file change is detected.
