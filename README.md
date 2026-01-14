@@ -100,3 +100,6 @@ USE_UNION_MERGE=false
 PUID=1000
 PGID=1000
 ```
+## Memory usage (Lightweight)
+- In my testing the docker container only uses about 10mb of ram when operational.
+
