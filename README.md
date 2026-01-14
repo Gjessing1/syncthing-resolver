@@ -1,4 +1,4 @@
-# syncthing-resolver
+# Syncthing-resolver
 Three-way merge using simple file versioning, dockerised for easy deployment
 
 Based on the public python gist: https://gist.github.com/solarkraft/26fe291a3de075ae8d96e1ada928fb7d (MIT Licensed)
