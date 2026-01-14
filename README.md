@@ -25,6 +25,7 @@ services:
     container_name: syncthing-resolver
     image: ghcr.io/gjessing1/syncthing-resolver:latest
     restart: unless-stopped
+    user: "${PUID}:${PGID}"
     
     # Load all variables from .env
     env_file:
@@ -89,4 +90,10 @@ BACKUP_BEFORE_MERGE=false
 
 # Git binary to use
 GIT_BIN=git
+
+# ==========================================
+# PERMISSIONS - Typical for Ubuntu/Debian Systems
+# ==========================================
+PUID=1000
+PGID=1000
 ```
