@@ -54,7 +54,7 @@ MERGE_LOG_PATH=/data/Logs/sync-merge-log.md
 USE_UNION_MERGE=false
 
 ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
-SETTLE_DELAY=250
+SETTLE_DELAY=3000
 DRY_RUN=false
 VERBOSE=false
 BACKUP_BEFORE_MERGE=false
