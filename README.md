@@ -21,7 +21,7 @@ Using the --union flag ensures that if the same line was edited on both devices,
 Example docker-compose.yml:
 ```docker-compose.yml
 services:
-  deconflict:
+  syncthing-resolver:
     container_name: syncthing-resolver
     image: ghcr.io/gjessing1/syncthing-resolver:latest
     restart: unless-stopped
