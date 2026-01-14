@@ -155,6 +155,7 @@ function mergeFiles(original, base, conflict) {
 
 /**
  * Helper to find all files in a directory recursively.
+ * Ignores dotfiles, dotfolders, and node_modules (matching chokidar behavior).
  */
 function getAllFiles(dirPath, arrayOfFiles = []) {
     if (!fs.existsSync(dirPath)) return [];
@@ -162,6 +163,11 @@ function getAllFiles(dirPath, arrayOfFiles = []) {
     const files = fs.readdirSync(dirPath);
 
     files.forEach(file => {
+        // Skip dotfiles/dotfolders and node_modules
+        if (file.startsWith('.') || file === 'node_modules') {
+            return;
+        }
+        
         const fullPath = path.join(dirPath, file);
         try {
             if (fs.statSync(fullPath).isDirectory()) {
