@@ -1,21 +1,24 @@
 # Syncthing-resolver
-Three-way merge using simple file versioning or staggered versioning, dockerised for easy deployment
+**An automated 3-way merge daemon for Syncthing conflicts.**
 
-Based on the public python gist: https://gist.github.com/solarkraft/26fe291a3de075ae8d96e1ada928fb7d (MIT Licensed)
-Adapted to node.js and added selective paths to watch and file extension control to easy use with Obsidian or other synced text documents (avoiding binary files).
+This tool monitors your Syncthing folders and automatically resolves "sync-conflict" files by performing a git three-way merge between the current file, the conflicted version, and the common ancestor found in `.stversions`.
+
+Based on the public python gist by [solarkraft](https://gist.github.com/solarkraft/26fe291a3de075ae8d96e1ada928fb7d). Adapted to Node.js with added support for Docker, environment-based configuration, selective path watching, and ghost file cleanup.
 
 ## How it works
-- Watch: Uses chokidar to monitor your specified folder for new conflict files.
-- Identify: Extracts the file metadata and locates the "ancestor" version in the .stversions directory.
-- Merge: Executes git merge-file --union to combine the changes.
-Using the --union flag ensures that if the same line was edited on both devices, both versions are kept (non-destructive), rather than throwing an error.
-- Clean: Deletes the conflict file after a successful merge.
+- **Startup Scan:** On launch, the script sweeps for any existing conflicts or stray Syncthing temp files (`.tmp`) left over from previous failed syncs.
+- **Watch:** Uses `chokidar` to monitor specific subfolders for new conflict files in real-time.
+- **Identify:** Locates the correct "ancestor" version inside the `.stversions` directory by calculating relative paths from the sync root.
+- **Merge:** Executes a `git merge-file` to combine changes. 
+- **Clean:** After a successful merge, it deletes the conflict file and any associated Syncthing temp ghosts immediately to keep your folders clean.
+- **Log:** Writes a detailed summary of every merge to a Markdown file of your choice.
 
-## Merge handling
-- Extension Filtering: By default, it only touches text-based files. It will ignore binary files like .jpg, .pdf, or .sqlite to prevent corruption.
-- Data Preservation: If using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review. If you want standard merge instead use the .env file with USE_UNION_MERGE=false, this is reccomended for notes/documents.
-- Read-Only Ancestors: The script only reads from .stversions; it never modifies your history.
-
+## Merge Handling
+- **Smart Merge (Recommended):** By default (`USE_UNION_MERGE=false`), the script uses Git's intelligent 3-way merge. It weaves changes together. If a conflict is too complex (editing the exact same line), it inserts standard `<<<<<<<` markers so you can resolve it in your editor without data loss.
+- **Union Merge:** If enabled, the script will never insert markers and instead keep both versions of a conflicting line (non-destructive but can cause line duplication).
+- **Extension Filtering:** Safely ignores binary files (images, PDFs, databases) to prevent corruption. Only handles text-based formats like `.md`, `.txt`, `.json`, etc.
+- **Safety First:** The script only modifies the "current" file and reads from `.stversions`. It never modifies your version history.
+- 
 ## Configuration
 
 Example docker-compose.yml:
@@ -26,80 +29,41 @@ services:
     image: ghcr.io/gjessing1/syncthing-resolver:latest
     restart: unless-stopped
     user: "${PUID}:${PGID}"
-    
-    # Load all variables from .env
     env_file:
       - .env
-
     volumes:
-      # Maps the path defined in .env (HOST_SYNCTHING_PATH)
-      # to the fixed internal path (/data)
+      # Map your Syncthing Root to /data
       - ${HOST_SYNCTHING_ROOT}:/data:rw
 ```
 
 Configuration .env file:
 ```
-# ==============================================================================
-# 1. HOST CONFIGURATION (Where are the files on your computer?)
-# ==============================================================================
+# === HOST CONFIG ===
+# Absolute path to the ROOT Syncthing folder (must contain .stversions)
+HOST_SYNCTHING_ROOT=/home/user/Syncthing/Notes
 
-# The absolute path to your ROOT Syncthing folder on your host machine.
-# IMPORTANT: This folder must contain the .stversions directory.
-# Example Linux: /home/user/Syncthing/Obsidian
-# Example Mac:   /Users/name/Syncthing/Obsidian
-# Example Windows: C:/Users/name/Syncthing/Obsidian
-HOST_SYNCTHING_ROOT=./example-folder
-
-# ==============================================================================
-# 2. CONTAINER CONFIGURATION (Do not use host paths here!)
-# ==============================================================================
-# Inside the container, your HOST_SYNCTHING_ROOT is always mounted at: /data
-# All paths below MUST start with /data
-
-# The Root path inside the container (usually just /data)
-# This is used to locate /data/.stversions
+# === CONTAINER PATHS (Must start with /data) ===
 SYNC_ROOT=/data
+WATCH_PATH=/data/Work/ProjectA
+# Relative to /data. Leave empty to disable logging.
+MERGE_LOG_PATH=/data/Logs/sync-merge-log.md
 
-# The specific subfolder you want to watch for conflicts
-# Example: If you only want to watch the 'Work' subfolder, use /data/Work
-WATCH_PATH=/data/Work/Drafts
-
-# Where to write the log file (inside the container)
-MERGE_LOG_PATH=/data/Work/_sync-merge-log.md
-
-# ==============================================================================
-# 3. APP SETTINGS
-# ==============================================================================
-# Name of the versions directory (usually .stversions)
-VERSIONS_DIR=.stversions
-
-# Time in ms to wait for file operations to settle
-SETTLE_DELAY=250
-
-# Set to 'true' to simulate merges without changing files
-DRY_RUN=false
-
-# Comma-separated list of extensions to process
-ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
-
-# Enable verbose logging for debugging
-VERBOSE=false
-
-# Backup the conflict file before merging - The pre-merge backups are currently stored in the same directory as the original file being merged. Subject to change in later releases.
-BACKUP_BEFORE_MERGE=false
-
-# Git binary to use
-GIT_BIN=git
-
-## 
+# === APP SETTINGS ===
+# false: Smart Merge (Markers on direct conflicts) - Best for Obsidian
+# true: Union Merge (Keep both lines, no markers)
 USE_UNION_MERGE=false
 
-# ==========================================
-# PERMISSIONS - Typical for Ubuntu/Debian Systems
-# ==========================================
+ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
+SETTLE_DELAY=250
+DRY_RUN=false
+VERBOSE=false
+BACKUP_BEFORE_MERGE=false
+
+# Permissions
 PUID=1000
 PGID=1000
 ```
-## Memory usage (Lightweight)
-- In my testing the docker container only uses about 10mb of ram when operational.
-
+## Performance & Footprint
+- **Memory:** Extremely lightweight, typically using ~10MB to 15MB of RAM.
+- **CPU:** Near-zero idle usage; only wakes up when a file change is detected.
+- **Privacy:** Operates entirely locally within your Docker environment.
