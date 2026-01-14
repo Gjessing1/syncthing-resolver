@@ -83,6 +83,6 @@ Reccomended syncthing ignore pattern if used with Obsidian:
 .stversions
 ```
 ## Performance & Footprint
-- **Memory:** Extremely lightweight, typically using ~10MB to 15MB of RAM.
+- **Memory:** Extremely lightweight, typically using ~15MB to 20MB of RAM.
 - **CPU:** Near-zero idle usage; only wakes up when a file change is detected.
 - **Privacy:** Operates entirely locally within your Docker environment.
