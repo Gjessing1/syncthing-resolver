@@ -32,7 +32,6 @@ services:
     env_file:
       - .env
     volumes:
-      # Map your Syncthing Root to /data
       - ${HOST_SYNCTHING_ROOT}:/data:rw
 ```
 
