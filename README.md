@@ -18,7 +18,7 @@ Based on the public python gist by [solarkraft](https://gist.github.com/solarkra
 - **Union Merge:** If enabled, the script will never insert markers and instead keep both versions of a conflicting line (non-destructive but can cause line duplication).
 - **Extension Filtering:** Safely ignores binary files (images, PDFs, databases) to prevent corruption. Only handles text-based formats like `.md`, `.txt`, `.json`, etc.
 - **Safety First:** The script only modifies the "current" file and reads from `.stversions`. It never modifies your version history.
-- 
+
 ## Configuration
 
 Example docker-compose.yml:
