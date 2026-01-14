@@ -84,8 +84,8 @@ ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
 # Enable verbose logging for debugging
 VERBOSE=false
 
-# Backup the conflict file before merging (recommended)
-BACKUP_BEFORE_MERGE=true
+# Backup the conflict file before merging - The pre-merge backups are currently stored in the same directory as the original file being merged. Subject to change in later releases.
+BACKUP_BEFORE_MERGE=false
 
 # Git binary to use
 GIT_BIN=git
