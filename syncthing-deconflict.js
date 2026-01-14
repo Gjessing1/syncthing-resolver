@@ -47,7 +47,6 @@ function escapeRegex(str) {
 
 /**
  * UNIFIED FILE WALKER
- * Identifies Syncthing temp files using a broad pattern to ensure no ghosts are missed.
  */
 function getFilesRecursive(dirPath, arrayOfFiles = []) {
     if (!fs.existsSync(dirPath)) return [];
@@ -143,7 +142,7 @@ async function cleanupSyncthingTemp(filePath) {
 }
 
 /**
- * Robust Startup Ghost Removal
+ * Startup Ghost Removal
  * Matches any syncthing temp files left behind.
  */
 function cleanupPreviousGhosts() {
