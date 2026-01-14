@@ -1,0 +1,17 @@
+{
+  "name": "syncthing-deconflict",
+  "version": "1.0.0",
+  "description": "Automatically resolve Syncthing conflicts using git 3-way merge",
+  "main": "syncthing-deconflict.js",
+  "scripts": {
+    "start": "node syncthing-deconflict.js",
+    "dry-run": "DRY_RUN=true node syncthing-deconflict.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
