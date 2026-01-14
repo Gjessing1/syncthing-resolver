@@ -6,8 +6,8 @@ This tool monitors your Syncthing folders and automatically resolves "sync-confl
 Based on the public python gist by [solarkraft](https://gist.github.com/solarkraft/26fe291a3de075ae8d96e1ada928fb7d). Adapted to Node.js with added support for Docker, environment-based configuration, selective path watching, and ghost file cleanup.
 
 <p>
-  <img src="https://img.shields.io/github/v/release/gjessing1/epub-bookprep" alt="Latest release">
-  <img src="https://img.shields.io/github/stars/gjessing1/epub-bookprep?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/v/release/gjessing1/syncthing-resolver" alt="Latest release">
+  <img src="https://img.shields.io/github/stars/gjessing1/syncthing-resolver?style=social" alt="GitHub stars">
   <a href="https://buymeacoffee.com/gjessing">
     <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="80" style="vertical-align: middle;">
   </a>
