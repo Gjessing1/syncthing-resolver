@@ -21,6 +21,11 @@ const CONFIG = {
     settleDelayMs: parseInt(process.env.SETTLE_DELAY) || 250,
     dryRun: process.env.DRY_RUN === 'true',
     
+    // TOGGLE MERGE STRATEGY: 
+    // true: No markers, but might duplicate lines (Safer for data)
+    // false: Intelligent merge, but inserts <<<<<< markers on direct conflicts (Cleaner for Markdown)
+    useUnionMerge: process.env.USE_UNION_MERGE === 'true', 
+
     // ONLY process these extensions (comma-separated, no dots)
     allowedExtensions: (process.env.ALLOWED_EXTENSIONS || 'md,txt,json,yaml,yml,org,canvas,taskpaper')
         .split(',')
@@ -120,7 +125,10 @@ function verifyGitAvailable() {
  * Returns true on success, false on failure.
  */
 function mergeFiles(original, base, conflict) {
-    const args = ['merge-file', '--union', original, base, conflict];
+    // Dynamically include --union flag based on configuration
+    const flags = CONFIG.useUnionMerge ? ['--union'] : [];
+    const args = ['merge-file', ...flags, original, base, conflict];
+    
     log('MERGE', `${CONFIG.gitBinary} ${args.join(' ')}`);
 
     if (CONFIG.dryRun) return true;
@@ -130,19 +138,15 @@ function mergeFiles(original, base, conflict) {
         encoding: 'utf8'
     });
     
-    // Check if spawn itself failed (e.g., binary not found)
     if (result.error) {
         throw new Error(`Git failed to execute: ${result.error.message}`);
     }
     
     // git merge-file returns:
     //   0 = clean merge
-    //  >0 = number of conflicts (but --union auto-resolves these)
-    //  -1 = error (but this comes as result.error, not status)
-    // With --union, any positive exit code still means the merge completed
-    
-    if (result.status < 0) {
-        // Negative status indicates a signal termination
+    //  >0 = number of conflicts
+    // If not using --union, result.status > 0 is common and means markers were inserted.
+    if (result.status !== null && result.status < 0) {
         throw new Error(`Git terminated by signal: ${result.signal}`);
     }
     
@@ -155,7 +159,6 @@ function mergeFiles(original, base, conflict) {
 
 /**
  * Helper to find all files in a directory recursively.
- * Ignores dotfiles, dotfolders, and node_modules (matching chokidar behavior).
  */
 function getAllFiles(dirPath, arrayOfFiles = []) {
     if (!fs.existsSync(dirPath)) return [];
@@ -163,7 +166,6 @@ function getAllFiles(dirPath, arrayOfFiles = []) {
     const files = fs.readdirSync(dirPath);
 
     files.forEach(file => {
-        // Skip dotfiles/dotfolders and node_modules
         if (file.startsWith('.') || file === 'node_modules') {
             return;
         }
@@ -176,7 +178,6 @@ function getAllFiles(dirPath, arrayOfFiles = []) {
                 arrayOfFiles.push(fullPath);
             }
         } catch (err) {
-            // File may have been deleted between readdir and stat
             if (CONFIG.verbose) {
                 log('WARN', `Could not stat ${fullPath}: ${err.message}`);
             }
@@ -206,28 +207,16 @@ function createBackup(filePath) {
 async function handleFileEvent(filePath, isStartupScan = false) {
     const absConflictPath = path.resolve(filePath);
     
-    // Debounce: skip if already processing this file
-    if (processingFiles.has(absConflictPath)) {
-        if (CONFIG.verbose) {
-            log('DEBOUNCE', `Already processing: ${absConflictPath}`);
-        }
-        return;
-    }
+    if (processingFiles.has(absConflictPath)) return;
     
-    // Check file exists and is a regular file
     try {
         const stats = fs.lstatSync(absConflictPath);
         if (!stats.isFile()) return;
     } catch (err) {
-        // File doesn't exist or can't be accessed
         return;
     }
 
     const fileName = path.basename(absConflictPath);
-
-    // Syncthing conflict pattern:
-    // name.sync-conflict-YYYYMMDD-HHMMSS-XXXXXXX.ext
-    // or URL-encoded variant with %2F
     const conflictRegex = /^(.*?)(?:\.|%2F)sync-conflict-([0-9]{8})-([0-9]{6})-([A-Z0-9]{7})\.?(.*)$/i;
     const match = fileName.match(conflictRegex);
 
@@ -236,21 +225,12 @@ async function handleFileEvent(filePath, isStartupScan = false) {
     const [_full, baseName, _date, _time, _id, extension] = match;
     const extLower = (extension || '').toLowerCase();
 
-    // --- EXTENSION SECURITY CHECK ---
-    // For extensionless files, check if empty string is in allowed list
-    // (by default it's not, so extensionless files are skipped)
     if (!CONFIG.allowedExtensions.includes(extLower)) {
-        if (CONFIG.verbose) {
-            const extDisplay = extLower ? `.${extLower}` : '(no extension)';
-            log('IGNORE', `Conflict found for "${fileName}", but extension "${extDisplay}" is not in allowed list.`);
-        }
         return;
     }
 
-    // Mark as processing to prevent duplicate handling
     processingFiles.add(absConflictPath);
     
-    // Variables for merge log
     let originalFileName = '';
     let latestBackupName = '';
     
@@ -258,18 +238,12 @@ async function handleFileEvent(filePath, isStartupScan = false) {
         const source = isStartupScan ? 'SCAN' : 'FOUND';
         log(source, `Valid conflict file: ${fileName}`);
 
-        // Wait for Syncthing to finish disk I/O (skip on startup scan)
         if (!isStartupScan) {
             await new Promise(resolve => setTimeout(resolve, CONFIG.settleDelayMs));
         }
 
-        // Verify file still exists after delay
-        if (!fs.existsSync(absConflictPath)) {
-            log('SKIP', `Conflict file disappeared: ${fileName}`);
-            return;
-        }
+        if (!fs.existsSync(absConflictPath)) return;
 
-        // 1. Determine the path of the Original file
         originalFileName = extension ? `${baseName}.${extension}` : baseName;
         const originalFilePath = path.join(path.dirname(absConflictPath), originalFileName);
 
@@ -278,7 +252,6 @@ async function handleFileEvent(filePath, isStartupScan = false) {
             return;
         }
 
-        // 2. Locate the backup in .stversions
         const absRoot = path.resolve(CONFIG.syncRootPath);
         const relativeToRoot = path.relative(absRoot, originalFilePath);
         const relativeDir = path.dirname(relativeToRoot);
@@ -289,11 +262,9 @@ async function handleFileEvent(filePath, isStartupScan = false) {
             return;
         }
 
-        // Match the Syncthing versioning format: filename~YYYYMMDD-HHMMSS.ext
         const escapedBase = escapeRegex(baseName);
         const escapedExt = escapeRegex(extension);
         
-        // Build regex that handles both files with and without extensions
         const backupRegex = extension
             ? new RegExp(`^${escapedBase}~([0-9]{8})-([0-9]{6})\\.${escapedExt}$`)
             : new RegExp(`^${escapedBase}~([0-9]{8})-([0-9]{6})$`);
@@ -301,26 +272,23 @@ async function handleFileEvent(filePath, isStartupScan = false) {
         const backupCandidates = getAllFiles(specificBackupFolder)
             .filter(f => backupRegex.test(path.basename(f)))
             .sort()
-            .reverse(); // Most recent first (lexicographic sort works for YYYYMMDD-HHMMSS)
+            .reverse();
 
         if (backupCandidates.length === 0) {
-            log('SKIP', `No historical versions found for "${originalFileName}" in ${specificBackupFolder}`);
+            log('SKIP', `No historical versions found for "${originalFileName}"`);
             return;
         }
 
         const latestBackup = backupCandidates[0];
         latestBackupName = path.basename(latestBackup);
         
-        log('INFO', `Using base version: ${latestBackupName}`);
         log('INFO', `Merging: "${originalFileName}" (ours) + "${fileName}" (theirs)`);
 
-        // Optional: Create safety backup before merging
         if (CONFIG.backupBeforeMerge && !CONFIG.dryRun) {
             const backup = createBackup(originalFilePath);
             log('BACKUP', `Created pre-merge backup: ${path.basename(backup)}`);
         }
 
-        // Perform the merge
         mergeFiles(originalFilePath, latestBackup, absConflictPath);
         
         log('CLEAN', `Deleting conflict file: ${fileName}`);
@@ -330,7 +298,6 @@ async function handleFileEvent(filePath, isStartupScan = false) {
         
         log('SUCCESS', `Resolved: ${originalFileName}`);
         
-        // Write to merge log
         appendMergeLog(formatMergeLogEntry(
             originalFileName,
             fileName,
@@ -339,12 +306,7 @@ async function handleFileEvent(filePath, isStartupScan = false) {
         ));
         
     } catch (err) {
-        log('ERROR', `Resolution failed for ${fileName}: ${err.message}`);
-        if (CONFIG.verbose) {
-            console.error(err.stack);
-        }
-        
-        // Write error to merge log
+        log('ERROR', `Resolution failed: ${err.message}`);
         appendMergeLog(formatMergeLogEntry(
             originalFileName || fileName,
             fileName,
@@ -352,9 +314,7 @@ async function handleFileEvent(filePath, isStartupScan = false) {
             '❌ Failed',
             err.message
         ));
-        
     } finally {
-        // Always remove from processing set
         processingFiles.delete(absConflictPath);
     }
 }
@@ -364,10 +324,8 @@ async function handleFileEvent(filePath, isStartupScan = false) {
  */
 async function startupScan() {
     log('SCAN', `Scanning for existing conflicts in ${CONFIG.watchPath}...`);
-    
     const allFiles = getAllFiles(path.resolve(CONFIG.watchPath));
     const conflictRegex = /sync-conflict-[0-9]{8}-[0-9]{6}-[A-Z0-9]{7}/i;
-    
     const conflicts = allFiles.filter(f => conflictRegex.test(path.basename(f)));
     
     if (conflicts.length === 0) {
@@ -376,12 +334,9 @@ async function startupScan() {
     }
     
     log('SCAN', `Found ${conflicts.length} existing conflict(s). Processing...`);
-    
     for (const conflict of conflicts) {
         await handleFileEvent(conflict, true);
     }
-    
-    log('SCAN', 'Startup scan complete.');
 }
 
 // --- STARTUP ---
@@ -401,9 +356,8 @@ try {
 
 console.log(`Watching:          ${path.resolve(CONFIG.watchPath)}`);
 console.log(`Sync Root:         ${path.resolve(CONFIG.syncRootPath)}`);
-console.log(`Versions Dir:      ${CONFIG.versionsDirName}`);
 console.log(`Allowed Exts:      ${CONFIG.allowedExtensions.join(', ')}`);
-console.log(`Settle Delay:      ${CONFIG.settleDelayMs}ms`);
+console.log(`Union Merge Mode:  ${CONFIG.useUnionMerge ? 'ENABLED (Safe/Duplicate lines)' : 'DISABLED (Smart/Markers)'}`);
 console.log(`Pre-merge Backup:  ${CONFIG.backupBeforeMerge ? 'enabled' : 'disabled'}`);
 console.log(`Merge Log:         ${CONFIG.mergeLogPath || 'disabled'}`);
 
@@ -414,16 +368,14 @@ if (CONFIG.dryRun) {
 
 console.log('');
 
-// Run startup scan, then start watcher
 startupScan().then(() => {
     console.log('');
     log('INFO', 'Starting file watcher...');
     
     const watcher = chokidar.watch(CONFIG.watchPath, {
-        ignored: /(^|[\/\\])\.|node_modules/,  // Ignore dotfiles and node_modules
+        ignored: /(^|[\/\\])\.|node_modules/,
         persistent: true,
         ignoreInitial: true,
-        // Add some stability options
         awaitWriteFinish: {
             stabilityThreshold: 100,
             pollInterval: 50
@@ -438,7 +390,6 @@ startupScan().then(() => {
     log('INFO', 'Watcher started. Waiting for conflict files...');
     console.log('');
 
-    // Graceful shutdown
     function shutdown() {
         console.log('');
         log('INFO', 'Shutting down...');
