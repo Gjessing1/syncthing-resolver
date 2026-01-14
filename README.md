@@ -13,7 +13,7 @@ Using the --union flag ensures that if the same line was edited on both devices,
 
 ## Merge handling
 - Extension Filtering: By default, it only touches text-based files. It will ignore binary files like .jpg, .pdf, or .sqlite to prevent corruption.
-- Data Preservation: By using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review.
+- Data Preservation: If using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review. If you want standard merge instead use the .env file with USE_UNION_MERGE=false, this is reccomended for notes/documents.
 - Read-Only Ancestors: The script only reads from .stversions; it never modifies your history.
 
 ## Configuration
@@ -34,7 +34,7 @@ services:
     volumes:
       # Maps the path defined in .env (HOST_SYNCTHING_PATH)
       # to the fixed internal path (/data)
-      - ${HOST_SYNCTHING_PATH}:/data:rw
+      - ${HOST_SYNCTHING_ROOT}:/data:rw
 ```
 
 Configuration .env file:
@@ -90,6 +90,9 @@ BACKUP_BEFORE_MERGE=false
 
 # Git binary to use
 GIT_BIN=git
+
+## 
+USE_UNION_MERGE=false
 
 # ==========================================
 # PERMISSIONS - Typical for Ubuntu/Debian Systems
