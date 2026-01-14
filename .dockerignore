@@ -1,0 +1,7 @@
+.git
+.gitignore
+.env
+*.md
+docker-compose.yml
+.github
+node_modules
