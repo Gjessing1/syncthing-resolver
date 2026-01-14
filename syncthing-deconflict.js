@@ -87,6 +87,7 @@ function appendMergeLog(entry) {
 
 /**
  * Format a merge log entry.
+ * All paths are relative to the Syncthing root folder.
  */
 function formatMergeLogEntry(originalFile, conflictFile, baseFile, status, error = null) {
     const now = new Date();
@@ -122,7 +123,10 @@ function verifyGitAvailable() {
 
 /**
  * Executes the git 3-way merge command.
- * Returns true on success, false on failure.
+ * Returns the git exit code:
+ *   0 = clean merge (no conflicts)
+ *  >0 = number of conflict markers inserted
+ *  -1 = dry run mode
  */
 function mergeFiles(original, base, conflict) {
     // Dynamically include --union flag based on configuration
@@ -131,7 +135,7 @@ function mergeFiles(original, base, conflict) {
     
     log('MERGE', `${CONFIG.gitBinary} ${args.join(' ')}`);
 
-    if (CONFIG.dryRun) return true;
+    if (CONFIG.dryRun) return -1;
 
     const result = spawnSync(CONFIG.gitBinary, args, { 
         stdio: 'pipe',
@@ -154,7 +158,105 @@ function mergeFiles(original, base, conflict) {
         log('WARN', `Git stderr: ${result.stderr.trim()}`);
     }
     
-    return true;
+    return result.status || 0;
+}
+
+/**
+ * Attempt to clean up Syncthing's temporary ~syncthing~*.tmp files.
+ * These can be left behind after conflict resolution.
+ * Handles the case where the file might still be locked by Syncthing.
+ */
+function cleanupSyncthingTemp(originalFilePath) {
+    const dir = path.dirname(originalFilePath);
+    const fileName = path.basename(originalFilePath);
+    
+    // Syncthing temp files follow the pattern: ~syncthing~<filename>.tmp
+    const tempFileName = `~syncthing~${fileName}.tmp`;
+    const tempFilePath = path.join(dir, tempFileName);
+    
+    if (!fs.existsSync(tempFilePath)) {
+        return; // No temp file to clean up
+    }
+    
+    try {
+        fs.unlinkSync(tempFilePath);
+        log('CLEAN', `Removed Syncthing temp file: ${tempFileName}`);
+    } catch (err) {
+        if (err.code === 'EBUSY' || err.code === 'EACCES' || err.code === 'EPERM') {
+            log('WARN', `Could not remove temp file "${tempFileName}" - likely still in use by Syncthing`);
+        } else {
+            log('WARN', `Failed to remove temp file "${tempFileName}": ${err.message}`);
+        }
+    }
+}
+
+/**
+ * Scan for and remove leftover Syncthing temp files for conflicts at startup.
+ * These are ghost files left behind from interrupted syncs.
+ * Pattern: ~syncthing~*sync-conflict*.tmp
+ */
+function cleanupPreviousGhosts() {
+    const absRoot = path.resolve(CONFIG.syncRootPath);
+    log('GHOST', `Scanning for leftover conflict temp files...`);
+    
+    const allFiles = getAllFilesIncludingHidden(path.resolve(CONFIG.watchPath));
+    const ghostRegex = /^~syncthing~.*sync-conflict.*\.tmp$/i;
+    const ghosts = allFiles.filter(f => ghostRegex.test(path.basename(f)));
+    
+    if (ghosts.length === 0) {
+        log('GHOST', 'No ghost temp files found.');
+        return;
+    }
+    
+    log('GHOST', `Found ${ghosts.length} ghost temp file(s). Cleaning up...`);
+    
+    for (const ghost of ghosts) {
+        const relativePath = path.relative(absRoot, ghost);
+        try {
+            if (!CONFIG.dryRun) {
+                fs.unlinkSync(ghost);
+            }
+            log('GHOST', `Removed: ${relativePath}${CONFIG.dryRun ? ' (dry run)' : ''}`);
+        } catch (err) {
+            if (err.code === 'EBUSY' || err.code === 'EACCES' || err.code === 'EPERM') {
+                log('WARN', `Could not remove ghost "${relativePath}" - likely still in use`);
+            } else {
+                log('WARN', `Failed to remove ghost "${relativePath}": ${err.message}`);
+            }
+        }
+    }
+}
+
+/**
+ * Helper to find all files in a directory recursively (including hidden files starting with ~).
+ * Used specifically for finding Syncthing temp files.
+ */
+function getAllFilesIncludingHidden(dirPath, arrayOfFiles = []) {
+    if (!fs.existsSync(dirPath)) return [];
+    
+    const files = fs.readdirSync(dirPath);
+
+    files.forEach(file => {
+        // Skip .dotfiles and node_modules, but allow ~syncthing~ files
+        if ((file.startsWith('.') && !file.startsWith('~')) || file === 'node_modules') {
+            return;
+        }
+        
+        const fullPath = path.join(dirPath, file);
+        try {
+            if (fs.statSync(fullPath).isDirectory()) {
+                getAllFilesIncludingHidden(fullPath, arrayOfFiles);
+            } else {
+                arrayOfFiles.push(fullPath);
+            }
+        } catch (err) {
+            if (CONFIG.verbose) {
+                log('WARN', `Could not stat ${fullPath}: ${err.message}`);
+            }
+        }
+    });
+
+    return arrayOfFiles;
 }
 
 /**
@@ -231,8 +333,13 @@ async function handleFileEvent(filePath, isStartupScan = false) {
 
     processingFiles.add(absConflictPath);
     
-    let originalFileName = '';
-    let latestBackupName = '';
+    // Get absolute root path for relative path calculations
+    const absRoot = path.resolve(CONFIG.syncRootPath);
+    
+    // Store relative paths for logging
+    let relativeOriginalPath = '';
+    let relativeConflictPath = '';
+    let relativeBasePath = '';
     
     try {
         const source = isStartupScan ? 'SCAN' : 'FOUND';
@@ -244,15 +351,18 @@ async function handleFileEvent(filePath, isStartupScan = false) {
 
         if (!fs.existsSync(absConflictPath)) return;
 
-        originalFileName = extension ? `${baseName}.${extension}` : baseName;
+        const originalFileName = extension ? `${baseName}.${extension}` : baseName;
         const originalFilePath = path.join(path.dirname(absConflictPath), originalFileName);
 
+        // Calculate relative paths for logging
+        relativeOriginalPath = path.relative(absRoot, originalFilePath);
+        relativeConflictPath = path.relative(absRoot, absConflictPath);
+
         if (!fs.existsSync(originalFilePath)) {
-            log('SKIP', `Original file "${originalFileName}" not found.`);
+            log('SKIP', `Original file "${relativeOriginalPath}" not found.`);
             return;
         }
 
-        const absRoot = path.resolve(CONFIG.syncRootPath);
         const relativeToRoot = path.relative(absRoot, originalFilePath);
         const relativeDir = path.dirname(relativeToRoot);
         const specificBackupFolder = path.join(absRoot, CONFIG.versionsDirName, relativeDir);
@@ -275,43 +385,56 @@ async function handleFileEvent(filePath, isStartupScan = false) {
             .reverse();
 
         if (backupCandidates.length === 0) {
-            log('SKIP', `No historical versions found for "${originalFileName}"`);
+            log('SKIP', `No historical versions found for "${relativeOriginalPath}"`);
             return;
         }
 
         const latestBackup = backupCandidates[0];
-        latestBackupName = path.basename(latestBackup);
+        relativeBasePath = path.relative(absRoot, latestBackup);
         
-        log('INFO', `Merging: "${originalFileName}" (ours) + "${fileName}" (theirs)`);
+        log('INFO', `Merging: "${relativeOriginalPath}" (ours) + "${path.basename(absConflictPath)}" (theirs)`);
 
         if (CONFIG.backupBeforeMerge && !CONFIG.dryRun) {
             const backup = createBackup(originalFilePath);
             log('BACKUP', `Created pre-merge backup: ${path.basename(backup)}`);
         }
 
-        mergeFiles(originalFilePath, latestBackup, absConflictPath);
+        const mergeExitCode = mergeFiles(originalFilePath, latestBackup, absConflictPath);
         
         log('CLEAN', `Deleting conflict file: ${fileName}`);
         if (!CONFIG.dryRun) {
             fs.unlinkSync(absConflictPath);
+            
+            // Attempt to clean up any Syncthing temp files for the conflict file
+            cleanupSyncthingTemp(absConflictPath);
         }
         
-        log('SUCCESS', `Resolved: ${originalFileName}`);
+        // Determine merge status based on exit code
+        let status;
+        if (CONFIG.dryRun) {
+            status = 'Resolved (dry run)';
+        } else if (mergeExitCode === 0) {
+            status = 'Resolved (Clean Merge)';
+            log('SUCCESS', `Resolved: ${relativeOriginalPath} - Clean Merge`);
+        } else {
+            status = `Resolved (Conflict Markers Inserted: ${mergeExitCode})`;
+            log('SUCCESS', `Resolved: ${relativeOriginalPath} - ${mergeExitCode} conflict marker(s) inserted`);
+        }
         
         appendMergeLog(formatMergeLogEntry(
-            originalFileName,
-            fileName,
-            latestBackupName,
-            CONFIG.dryRun ? '✅ Resolved (dry run)' : '✅ Resolved'
+            relativeOriginalPath,
+            relativeConflictPath,
+            relativeBasePath,
+            status
         ));
         
     } catch (err) {
         log('ERROR', `Resolution failed: ${err.message}`);
         appendMergeLog(formatMergeLogEntry(
-            originalFileName || fileName,
-            fileName,
-            latestBackupName || 'N/A',
-            '❌ Failed',
+            relativeOriginalPath || fileName,
+            relativeConflictPath || fileName,
+            relativeBasePath || 'N/A',
+            'Failed',
             err.message
         ));
     } finally {
@@ -321,12 +444,17 @@ async function handleFileEvent(filePath, isStartupScan = false) {
 
 /**
  * Scan for existing conflict files at startup.
+ * Ignores .tmp files to avoid processing Syncthing temp files.
  */
 async function startupScan() {
     log('SCAN', `Scanning for existing conflicts in ${CONFIG.watchPath}...`);
     const allFiles = getAllFiles(path.resolve(CONFIG.watchPath));
     const conflictRegex = /sync-conflict-[0-9]{8}-[0-9]{6}-[A-Z0-9]{7}/i;
-    const conflicts = allFiles.filter(f => conflictRegex.test(path.basename(f)));
+    const conflicts = allFiles.filter(f => {
+        const basename = path.basename(f);
+        // Must match conflict pattern AND must NOT be a .tmp file
+        return conflictRegex.test(basename) && !basename.endsWith('.tmp');
+    });
     
     if (conflicts.length === 0) {
         log('SCAN', 'No existing conflicts found.');
@@ -368,6 +496,12 @@ if (CONFIG.dryRun) {
 
 console.log('');
 
+// Step 1: Clean up any leftover ghost temp files from previous runs
+cleanupPreviousGhosts();
+
+console.log('');
+
+// Step 2: Process any existing conflict files
 startupScan().then(() => {
     console.log('');
     log('INFO', 'Starting file watcher...');
