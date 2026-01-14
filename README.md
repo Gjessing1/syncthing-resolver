@@ -77,7 +77,7 @@ Reccomended syncthing ignore pattern if used with Obsidian:
 (?d).obsidian/workspace
 (?d).obsidian/workspace.json
 (?d).obsidian/workspace-mobile.json
-.(?d)obsidian/cache
+(?d).obsidian/cache
 (?d).obsidian/community-plugins.json
 
 # System junk
