@@ -2,7 +2,7 @@
  * Syncthing 3-Way Merge Deconflicter (Node.js)
  * 
  * Automatically resolves Syncthing conflicts by performing a git three-way merge.
- * Optimized for Docker environments.
+ * Prevents nested markers and handles locked temporary files.
  */
 
 require('dotenv').config();
@@ -18,12 +18,9 @@ const CONFIG = {
     syncRootPath: process.env.SYNC_ROOT || './',
     versionsDirName: process.env.VERSIONS_DIR || '.stversions',
     gitBinary: process.env.GIT_BIN || 'git',
-    settleDelayMs: parseInt(process.env.SETTLE_DELAY) || 250,
+    settleDelayMs: parseInt(process.env.SETTLE_DELAY) || 2500, // User set to 2500
     dryRun: process.env.DRY_RUN === 'true',
     
-    // TOGGLE MERGE STRATEGY: 
-    // true: No markers, but might duplicate lines (Safer for data)
-    // false: Intelligent merge, but inserts <<<<<< markers on direct conflicts
     useUnionMerge: process.env.USE_UNION_MERGE === 'true', 
 
     allowedExtensions: (process.env.ALLOWED_EXTENSIONS || 'md,txt,json,yaml,yml,org,canvas,taskpaper')
@@ -63,23 +60,17 @@ function getFilesRecursive(dirPath, arrayOfFiles = []) {
         
         try {
             stat = fs.statSync(fullPath);
-        } catch (err) {
-            return; // Skip inaccessible files
-        }
+        } catch (err) { return; }
 
         if (stat.isDirectory()) {
-            // Ignore hidden directories (except the root watch path) and node_modules
-            // We allow .stversions to be scanned if the walker is called on it directly
             if ((file.startsWith('.') && file !== CONFIG.versionsDirName) || file === 'node_modules') {
                 return;
             }
             getFilesRecursive(fullPath, arrayOfFiles);
         } else {
-            // Dual Pattern: Matches ~syncthing~... (Windows) and .syncthing... (Linux)
             const isSyncthingTemp = /^[.~]syncthing~.*\.tmp$/i.test(file);
             const isHidden = file.startsWith('.') || file.startsWith('~');
 
-            // "Fast Track": Include if it's a normal file OR if it's a Syncthing temp file
             if (!isHidden || isSyncthingTemp) {
                 arrayOfFiles.push(fullPath);
             }
@@ -89,9 +80,6 @@ function getFilesRecursive(dirPath, arrayOfFiles = []) {
     return arrayOfFiles;
 }
 
-/**
- * Appends entry to merge log file.
- */
 function appendMergeLog(entry) {
     if (!CONFIG.mergeLogPath) return;
     try {
@@ -99,7 +87,7 @@ function appendMergeLog(entry) {
         const dir = path.dirname(logPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         if (!fs.existsSync(logPath)) {
-            fs.writeFileSync(logPath, '# Syncthing Merge Log\n\nAuto-generated.\n\n---\n\n');
+            fs.writeFileSync(logPath, '# Syncthing Merge Log\n\n---\n\n');
         }
         fs.appendFileSync(logPath, entry);
     } catch (err) {
@@ -108,15 +96,13 @@ function appendMergeLog(entry) {
 }
 
 function formatMergeLogEntry(originalFile, conflictFile, baseFile, status, error = null) {
-    const now = new Date();
-    const entry = `## ${now.toISOString()}\n` +
+    return `## ${new Date().toISOString()}\n` +
         `- **Status:** ${status}\n` +
         `- **File:** \`${originalFile}\`\n` +
         `- **Conflict:** \`${conflictFile}\`\n` +
         `- **Base:** \`${baseFile}\`\n` +
         (error ? `- **Error:** ${error}\n` : '') +
         `\n---\n\n`;
-    return entry;
 }
 
 // --- CORE LOGIC ---
@@ -124,20 +110,19 @@ function formatMergeLogEntry(originalFile, conflictFile, baseFile, status, error
 function verifyGitAvailable() {
     const result = spawnSync(CONFIG.gitBinary, ['--version'], { encoding: 'utf8' });
     if (result.error) throw new Error(`Git not found: ${result.error.message}`);
-    if (CONFIG.verbose) log('INFO', `Using ${result.stdout.trim()}`);
 }
 
 /**
- * Cleans up temp files for a specific resolved conflict.
- * Handles both Windows (~syncthing~) and Linux (.syncthing) prefixes.
+ * Cleans up temp files with an additional delay to ensure Syncthing releases locks.
  */
-function cleanupSyncthingTemp(filePath) {
+async function cleanupSyncthingTemp(filePath) {
     const dir = path.dirname(filePath);
     const fileName = path.basename(filePath);
-    
-    // Pattern to check for the temp version of the specific file provided
     const variations = [`~syncthing~${fileName}.tmp`, `.syncthing.${fileName}.tmp`];
     
+    // Tiny extra grace period for the OS to release the file handle
+    await new Promise(r => setTimeout(r, 500));
+
     variations.forEach(tempName => {
         const tempPath = path.join(dir, tempName);
         if (fs.existsSync(tempPath)) {
@@ -145,35 +130,24 @@ function cleanupSyncthingTemp(filePath) {
                 if (!CONFIG.dryRun) fs.unlinkSync(tempPath);
                 log('CLEAN', `Removed temp file: ${tempName}`);
             } catch (err) {
-                log('WARN', `Could not remove "${tempName}": ${err.message}`);
+                log('WARN', `Could not remove "${tempName}" (likely still locked by Syncthing).`);
             }
         }
     });
 }
 
-/**
- * Scans for and removes leftover Syncthing temp files (Ghosts).
- */
 function cleanupPreviousGhosts() {
     log('GHOST', `Scanning for leftover conflict temp files...`);
     const allFiles = getFilesRecursive(path.resolve(CONFIG.watchPath));
-    
-    // Dual pattern for ghost files
     const ghostRegex = /^[.~]syncthing~.*sync-conflict.*\.tmp$/i;
     const ghosts = allFiles.filter(f => ghostRegex.test(path.basename(f)));
     
-    if (ghosts.length === 0) {
-        log('GHOST', 'No ghost temp files found.');
-        return;
-    }
-    
-    log('GHOST', `Found ${ghosts.length} ghost file(s).`);
     ghosts.forEach(ghost => {
         try {
             if (!CONFIG.dryRun) fs.unlinkSync(ghost);
-            log('GHOST', `Removed: ${path.basename(ghost)}${CONFIG.dryRun ? ' (dry run)' : ''}`);
+            log('GHOST', `Removed: ${path.basename(ghost)}`);
         } catch (err) {
-            log('WARN', `Failed to remove ghost ${path.basename(ghost)}: ${err.message}`);
+            log('WARN', `Failed to remove ghost ${path.basename(ghost)}`);
         }
     });
 }
@@ -199,7 +173,6 @@ async function handleFileEvent(filePath, isStartupScan = false) {
     } catch (err) { return; }
 
     const fileName = path.basename(absConflictPath);
-    // Syncthing conflict pattern
     const conflictRegex = /^(.*?)(?:\.|%2F)sync-conflict-([0-9]{8})-([0-9]{6})-([A-Z0-9]{7})\.?(.*)$/i;
     const match = fileName.match(conflictRegex);
 
@@ -212,7 +185,8 @@ async function handleFileEvent(filePath, isStartupScan = false) {
     const absRoot = path.resolve(CONFIG.syncRootPath);
     
     try {
-        if (!isStartupScan) await new Promise(r => setTimeout(r, CONFIG.settleDelayMs));
+        // Wait for Syncthing to finish writing the conflict file
+        await new Promise(r => setTimeout(r, CONFIG.settleDelayMs));
         if (!fs.existsSync(absConflictPath)) return;
 
         const originalFileName = extension ? `${baseName}.${extension}` : baseName;
@@ -223,7 +197,14 @@ async function handleFileEvent(filePath, isStartupScan = false) {
             return;
         }
 
-        // Find Base File in .stversions
+        // --- ANTI-NESTING GUARD ---
+        // If "ours" already has conflict markers, merging into it creates nested junk.
+        const originalContent = fs.readFileSync(originalFilePath, 'utf8');
+        if (originalContent.includes('<<<<<<<') && !CONFIG.useUnionMerge) {
+            log('WARN', `Skipping: "${originalFileName}" already contains markers. Resolve them manually first.`);
+            return;
+        }
+
         const relativeOriginal = path.relative(absRoot, originalFilePath);
         const versionsFolder = path.join(absRoot, CONFIG.versionsDirName, path.dirname(relativeOriginal));
 
@@ -250,15 +231,16 @@ async function handleFileEvent(filePath, isStartupScan = false) {
         const latestBackup = backupCandidates[0];
         
         if (CONFIG.backupBeforeMerge && !CONFIG.dryRun) {
-            const ts = new Date().getTime();
-            fs.copyFileSync(originalFilePath, `${originalFilePath}.${ts}.bak`);
+            fs.copyFileSync(originalFilePath, `${originalFilePath}.${new Date().getTime()}.bak`);
         }
 
         const mergeExitCode = mergeFiles(originalFilePath, latestBackup, absConflictPath);
         
         if (!CONFIG.dryRun) {
+            // Clean up the conflict file
             fs.unlinkSync(absConflictPath);
-            cleanupSyncthingTemp(absConflictPath);
+            // Specifically clean up associated .tmp files
+            await cleanupSyncthingTemp(absConflictPath);
         }
         
         const status = mergeExitCode === 0 ? 'Clean Merge' : `Conflicts Marked (${mergeExitCode})`;
@@ -287,7 +269,7 @@ async function startupScan() {
     log('SCAN', 'Startup scan complete.');
 }
 
-// --- EXECUTION ---
+// --- STARTUP ---
 
 verifyGitAvailable();
 cleanupPreviousGhosts();
@@ -297,7 +279,7 @@ startupScan().then(() => {
         ignored: /(^|[\/\\])\.|node_modules/,
         persistent: true,
         ignoreInitial: true,
-        awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 }
+        awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 100 }
     });
 
     watcher
@@ -305,7 +287,7 @@ startupScan().then(() => {
         .on('change', f => handleFileEvent(f))
         .on('error', e => log('ERROR', `Watcher: ${e}`));
 
-    log('INFO', 'Watcher active.');
+    log('INFO', `Watcher active. (Settle delay: ${CONFIG.settleDelayMs}ms)`);
 
     process.on('SIGINT', () => watcher.close().then(() => process.exit(0)));
 });
