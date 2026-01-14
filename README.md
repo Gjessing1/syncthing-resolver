@@ -11,7 +11,7 @@ Merge: Executes git merge-file --union to combine the changes.
 Using the --union flag ensures that if the same line was edited on both devices, both versions are kept (non-destructive), rather than throwing an error.
 Clean: Deletes the conflict file after a successful merge.
 
-## Merging handling
+## Merge handling
 Extension Filtering: By default, it only touches text-based files. It will ignore binary files like .jpg, .pdf, or .sqlite to prevent corruption.
 Data Preservation: By using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review.
 Read-Only Ancestors: The script only reads from .stversions; it never modifies your history.
