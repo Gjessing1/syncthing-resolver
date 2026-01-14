@@ -22,59 +22,71 @@ Example docker-compose.yml:
 ```docker-compose.yml
 services:
   deconflict:
-    build: .
-    container_name: syncthing-deconflict
+    container_name: syncthing-resolver
+    image: ghcr.io/gjessing1/syncthing-resolver:latest
     restart: unless-stopped
+    
+    # Load all variables from .env
+    env_file:
+      - .env
+
     volumes:
-      # Mount your Syncthing folder - adjust path as needed
-      - /path/to/your/syncthing/folder:/data:rw
-    environment:
-      - WATCH_PATH=/data/Notes/Work
-      - SYNC_ROOT=/data
-      - VERSIONS_DIR=.stversions
-      - SETTLE_DELAY=250
-      - DRY_RUN=false
-      - ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
-      - VERBOSE=false
-      - BACKUP_BEFORE_MERGE=true
-      - MERGE_LOG_PATH=/data/Notes/Work/_sync-merge-log.md
-    # Optional: use .env file instead of inline environment
-    # env_file:
-    #   - .env
+      # Maps the path defined in .env (HOST_SYNCTHING_PATH)
+      # to the fixed internal path (/data)
+      - ${HOST_SYNCTHING_PATH}:/data:rw
 ```
 
-Optional .env file:
+Configuration .env file:
 ```
-# Syncthing 3-Way Merge Deconflicter Configuration
+# ==============================================================================
+# 1. HOST CONFIGURATION (Where are the files on your computer?)
+# ==============================================================================
 
-# Path to watch for conflict files
-WATCH_PATH=./Notes/Work
+# The absolute path to your ROOT Syncthing folder on your host machine.
+# IMPORTANT: This folder must contain the .stversions directory.
+# Example Linux: /home/user/Syncthing/Obsidian
+# Example Mac:   /Users/name/Syncthing/Obsidian
+# Example Windows: C:/Users/name/Syncthing/Obsidian
+HOST_SYNCTHING_ROOT=./example-folder
 
-# Root of the Syncthing folder (used to locate .stversions)
-SYNC_ROOT=./
+# ==============================================================================
+# 2. CONTAINER CONFIGURATION (Do not use host paths here!)
+# ==============================================================================
+# Inside the container, your HOST_SYNCTHING_ROOT is always mounted at: /data
+# All paths below MUST start with /data
 
-# Name of the Syncthing versions directory
+# The Root path inside the container (usually just /data)
+# This is used to locate /data/.stversions
+SYNC_ROOT=/data
+
+# The specific subfolder you want to watch for conflicts
+# Example: If you only want to watch the 'Work' subfolder, use /data/Work
+WATCH_PATH=/data/Work/Drafts
+
+# Where to write the log file (inside the container)
+MERGE_LOG_PATH=/data/Work/_sync-merge-log.md
+
+# ==============================================================================
+# 3. APP SETTINGS
+# ==============================================================================
+# Name of the versions directory (usually .stversions)
 VERSIONS_DIR=.stversions
 
-# Path to git binary
-GIT_BIN=git
-
-# Delay (ms) to wait for Syncthing to finish writing files
+# Time in ms to wait for file operations to settle
 SETTLE_DELAY=250
 
-# Dry run mode - set to 'true' to test without modifying files
+# Set to 'true' to simulate merges without changing files
 DRY_RUN=false
 
-# Allowed file extensions (comma-separated, no dots)
+# Comma-separated list of extensions to process
 ALLOWED_EXTENSIONS=md,txt,json,yaml,yml,org,canvas,taskpaper
 
-# Verbose logging
+# Enable verbose logging for debugging
 VERBOSE=false
 
-# Create backup before merging (set to 'false' to disable)
+# Backup the conflict file before merging (recommended)
 BACKUP_BEFORE_MERGE=true
 
-# Path to merge log file (leave empty to disable)
-# This file will be created inside your Obsidian vault so you can review merges
-MERGE_LOG_PATH=./Notes/Work/_sync-merge-log.md
+# Git binary to use
+GIT_BIN=git
 ```
