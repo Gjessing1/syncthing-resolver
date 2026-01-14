@@ -5,16 +5,16 @@ Based on the public python gist: https://gist.github.com/solarkraft/26fe291a3de0
 Adapted to node.js and added selective paths to watch and file extension control to easy use with Obsidian or other synced text documents (avoiding binary files).
 
 ## How it works
-Watch: Uses chokidar to monitor your specified folder for new conflict files.
-Identify: Extracts the file metadata and locates the "ancestor" version in the .stversions directory.
-Merge: Executes git merge-file --union to combine the changes.
+- Watch: Uses chokidar to monitor your specified folder for new conflict files.
+- Identify: Extracts the file metadata and locates the "ancestor" version in the .stversions directory.
+- Merge: Executes git merge-file --union to combine the changes.
 Using the --union flag ensures that if the same line was edited on both devices, both versions are kept (non-destructive), rather than throwing an error.
-Clean: Deletes the conflict file after a successful merge.
+- Clean: Deletes the conflict file after a successful merge.
 
 ## Merge handling
-Extension Filtering: By default, it only touches text-based files. It will ignore binary files like .jpg, .pdf, or .sqlite to prevent corruption.
-Data Preservation: By using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review.
-Read-Only Ancestors: The script only reads from .stversions; it never modifies your history.
+- Extension Filtering: By default, it only touches text-based files. It will ignore binary files like .jpg, .pdf, or .sqlite to prevent corruption.
+- Data Preservation: By using Git's --union merge strategy, the script avoids picking "winners." If two changes conflict on the same line, both are preserved in the text file for you to review.
+- Read-Only Ancestors: The script only reads from .stversions; it never modifies your history.
 
 ## Configuration
 
