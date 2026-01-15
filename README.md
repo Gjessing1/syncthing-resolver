@@ -94,3 +94,15 @@ Reccomended syncthing ignore pattern if used with Obsidian:
 - **Memory:** Extremely lightweight, typically using ~15MB to 20MB of RAM.
 - **CPU:** Near-zero idle usage; only wakes up when a file change is detected.
 - **Privacy:** Operates entirely locally within your Docker environment.
+
+## Tested and approved by my active syncthing instance
+- While no guarantees I have tried to test it extensively and it has solved my conflicts
+- Find any bugs or have suggestion for better features? open a issue on the repo and I will see if there is anything i can do
+
+- ## Like the project?
+Please consider buying me a coffe, I really do drink it alot!
+<p>
+  <a href="https://buymeacoffee.com/gjessing">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="80" style="vertical-align: middle;">
+  </a>
+</p>
