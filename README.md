@@ -60,7 +60,7 @@ MERGE_LOG_PATH=/data/Logs/sync-merge-log.md
 # true: Union Merge (Keep both lines, no markers)
 USE_UNION_MERGE=false
 
-ALLOWED_EXTENSIONS=md,txt,yaml,yml,org,taskpaper
+ALLOWED_EXTENSIONS=md,txt,js,py,html,css,yaml,ini,conf,sh
 SETTLE_DELAY=3000
 DRY_RUN=false
 VERBOSE=false
