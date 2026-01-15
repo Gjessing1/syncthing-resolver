@@ -96,8 +96,9 @@ Reccomended syncthing ignore pattern if used with Obsidian:
 - **Privacy:** Operates entirely locally within your Docker environment.
 
 ## Tested and approved by my active syncthing instance
-- While no guarantees I have tried to test it extensively and it has solved my conflicts
-- Find any bugs or have suggestion for better features? open a issue on the repo and I will see if there is anything i can do
+- Actively used and tested against my own Syncthing instance, it has successfully resolved conflicts in all my test scenarios.
+- While no guarantees can be made, it has been exercised extensively in day-to-day use.
+- Found a bug or have an idea for an improvement? Open an issue in the repository and I’ll take a look.
 
 - ## Like the project?
 Please consider buying me a coffe, I really do drink it alot!
