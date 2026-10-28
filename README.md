@@ -8,9 +8,6 @@ Based on the public python gist by [solarkraft](https://gist.github.com/solarkra
 <p>
   <img src="https://img.shields.io/github/v/release/gjessing1/syncthing-resolver" alt="Latest release">
   <img src="https://img.shields.io/github/stars/gjessing1/syncthing-resolver?style=social" alt="GitHub stars">
-  <a href="https://buymeacoffee.com/gjessing">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="80" style="vertical-align: middle;">
-  </a>
 </p>
 
 ## How it works
@@ -99,11 +96,3 @@ Reccomended syncthing ignore pattern if used with Obsidian:
 - Actively used and tested against my own Syncthing instance, it has successfully resolved conflicts in all my test scenarios.
 - While no guarantees can be made, it has been exercised extensively in day-to-day use.
 - Found a bug or have an idea for an improvement? Open an issue in the repository and I’ll take a look.
-
-- ## Like the project?
-Please consider buying me a coffe, I really do drink it alot!
-<p>
-  <a href="https://buymeacoffee.com/gjessing">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="80" style="vertical-align: middle;">
-  </a>
-</p>
