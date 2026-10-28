@@ -35,7 +35,7 @@ jobs:
     runs-on: docker
     env:
       # Deploy project (compose file + .env), bind-mounted into the job by the runner.
-      DEPLOY_DIR: /home/gjessing/docker/syncthing-resolver
+      DEPLOY_DIR: /home/gjessing/docker/Infrastructure/syncthing-resolver
     steps:
       - uses: actions/checkout@v4
 
